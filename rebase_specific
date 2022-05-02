@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# add following line to ~/.tigrc to use this script easily
+# bind main B !/path/to/rebase_specific %(commit) "%(prompt Enter rebase action if not reword: )"
+
+usage() {
+	echo "Usage : $0 \$commit \$option"
+	echo "    k|up   : move commit later(up)"
+	echo "    j|down : move commit earlier(down)"
+	echo "    ---"
+	echo "    i      : interactive"
+	echo "    r      : reword,   use commit, but edit the commit message"
+	echo "    e      : edit,     use commit, but stop for amending"
+	echo "    s      : squash,   use commit, but meld into previous commit"
+	echo "    f      : fixup,    like \"squash\", but discard this commit's log message"
+	echo "    drop   : remove    commit"
+	echo "    ---"
+	echo "    c      : continue, rebase --continue"
+	echo "    a      : abort,    rebase --abort"
+	echo "    *      : help"
+}
+
+stash_and_run() {
+	COMMIT=$1
+	AHEAD=$2
+	CMD=$3
+
+	ret=$(git stash)
+	need_stash=$(echo $ret | grep -c "No local changes to save" | grep 0)
+	test $need_stash && echo -e "=== Run git stash ===\n" && echo $ret
+
+	echo -e "\n=== Run $0 ${COMMIT} ${CMD} ===\n"
+	GIT_SEQUENCE_EDITOR="sed -i '${AHEAD} s/^pick/${CMD}/g'" git rebase -i ${COMMIT}~${AHEAD}
+	test $need_stash && echo -e "\n=== Run git stash pop ===\n" &&  git stash pop
+}
+
+case ${2} in
+	# simple method, will auto stash push / pop if need
+	r*|'')	stash_and_run ${1} 1 "r"		;;
+	drop) 	stash_and_run ${1} 1 "d"		;;
+	s*) 	stash_and_run ${1} 2 "s"		;;
+	f*) 	stash_and_run ${1} 2 "f"		;;
+
+	k|up)	GIT_SEQUENCE_EDITOR="sed -i 'N;s/^\(.*\)\n\(.*\)/\2\n\1/'"	git rebase -i ${1}^		;;
+	j|down) GIT_SEQUENCE_EDITOR="sed -i 'N;s/^\(.*\)\n\(.*\)/\2\n\1/'"	git rebase -i ${1}^^	;;
+	e*) 	GIT_SEQUENCE_EDITOR="sed -i '1 s/^pick/e/g'" 				git rebase -i ${1}^		;;
+
+	i*)		git rebase -i ${1}^		;;
+	c*) 	git rebase --continue	;;
+	a*) 	git rebase --abort		;;
+	*) 		usage 					;;
+esac
